@@ -74,6 +74,40 @@ exit:
     return status;
 }
 
+int
+heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint32_t *x, uint32_t *y){
+    int status = 0;
+
+    *x = 0;
+    *y = 0;
+
+    float min_lon = heightmap->xll;
+    float max_lon = heightmap->xll + (heightmap->cellsize * heightmap->cols);
+    float min_lat = heightmap->yll;
+    float max_lat = heightmap->yll + (heightmap->cellsize * heightmap->rows);
+    if( lon < min_lon || lon > max_lon ){
+        fprintf(stderr, "Error: Longitude not in range: %.6f [%.6f:%.6f]\n", lon, min_lon, max_lon);
+        status = EINVAL;
+        goto exit;
+    }else if( lat < min_lat || lat > max_lat ){
+        fprintf(stderr, "Error: Latitude not in range: %.6f [%.6f:%.6f]\n", lat, min_lat, max_lat);
+        status = EINVAL;
+        goto exit;
+    }
+
+    size_t ppdx;
+    size_t ppdy;
+    if( (status = heightmap_get_ppd(heightmap, &ppdx, &ppdy)) != 0 ){
+        goto exit;
+    }
+
+    *x = (uint32_t)((lon - min_lon) * ppdx);
+    *y = (uint32_t)((lat - min_lat) * ppdy);
+
+exit:
+    return status;
+}
+
 vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input){
     vs_heightmap_t heightmap;
 
