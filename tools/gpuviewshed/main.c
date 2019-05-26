@@ -38,7 +38,10 @@ int main(int argc, char* argv[]){
 
     vs_viewshed_t viewshed = gpu_calculate_viewshed(heightmap, x, y, z);
 
-    viewshed_to_file(viewshed, viewshed_file);
+    if( (status = viewshed_to_png(&viewshed, viewshed_file)) != 0 ){
+        fprintf(stderr, "Error outputting viewshed\n");
+        goto exit;
+    }
 
 exit:
     heightmap_destroy(&heightmap);

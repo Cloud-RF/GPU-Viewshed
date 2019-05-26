@@ -6,11 +6,19 @@
 #include <stdio.h>
 #include <errno.h>
 #include <math.h>
+#include <png.h>
+#include <assert.h>
 
 typedef struct _coord_t{
     float x;
     float y;
 } coord_t, *pcoord_t;
+
+typedef struct __attribute__((packed)) _rgb_t{
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+} rgb_t, *prgbt;
 
  #define max(a, b) \
    ({ __typeof__ (a) _a = (a); \
@@ -421,6 +429,94 @@ void heightmap_to_file(vs_heightmap_t heightmap, FILE* outputfile){
     }
     fflush(outputfile);
     return;
+}
+
+int
+viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile){
+    int status;
+    prgbt image_buffer;
+    png_structp png_ptr;
+    png_infop info_ptr;
+    png_bytep *row_pointers;
+    rgb_t black = {0,0,0};
+
+    assert(sizeof(rgb_t) == 3);
+
+    /* Create a white image buffer */
+    size_t image_size = viewshed->rows * viewshed->cols * sizeof(rgb_t);
+    if( (image_buffer = malloc(image_size)) == NULL ){
+        status = ENOMEM;
+        goto exit;
+    }
+    memset((void*)image_buffer, 0xff, image_size);
+
+    /* Loop through and set the remaining pixels */
+    for(size_t x=0; x<viewshed->cols; x++)
+    for(size_t y=0; y<viewshed->rows; y++){
+        if( viewshed->viewshed[(x * viewshed->cols) + y] )
+            image_buffer[(x * viewshed->cols) + y] = black;
+    }
+
+    /* Initialize the row pointers */
+    if( (row_pointers = (png_bytep*) calloc(viewshed->rows, sizeof(png_bytep))) == NULL ){
+        status = ENOMEM;
+        goto exit;
+    }
+    for(size_t i = 0; i<viewshed->rows; i++){
+        row_pointers[i] = (png_bytep) &image_buffer[i * viewshed->cols];
+    }
+
+    /* Do PNG image processing */
+    png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if(png_ptr == NULL){
+        status = ENOMEM;
+        goto exit;
+    }
+
+    info_ptr = png_create_info_struct(png_ptr);
+    if(info_ptr == NULL){
+        status = ENOMEM;
+        goto cleanup;
+    }
+
+    if (setjmp(png_jmpbuf(png_ptr))){
+        status = EINVAL;
+        goto cleanup;
+    }
+
+    png_init_io(png_ptr, outputfile);
+
+#ifdef COMPRESSION
+    png_set_compression_level(png_ptr, COMPRESSION);
+#endif
+
+    png_set_IHDR(png_ptr, info_ptr, viewshed->cols, viewshed->rows, 8 /*bit_depth*/,
+                    PNG_COLOR_TYPE_RGB,
+                    PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+
+    png_write_info(png_ptr, info_ptr);
+
+    png_write_image(png_ptr, row_pointers);
+
+    png_write_end(png_ptr, NULL);
+
+    status = 0;
+
+cleanup:
+
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+
+exit:
+
+    if( image_buffer != NULL ){
+        free(image_buffer);
+    }
+    
+    if( row_pointers != NULL ){
+        free(row_pointers);
+    }
+
+    return status;
 }
 
 vs_viewshed_t viewshed_from_array(uint32_t rows, uint32_t cols, bool *input){
