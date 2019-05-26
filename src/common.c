@@ -285,7 +285,7 @@ heightmap_from_files(const char * const inputfiles,
 
     /* If there is only one file, no need to join them together */
     if( file_count == 1 ){
-        *map = *tiles;
+        *map = tiles[0];
         goto exit;
     }
 
@@ -400,7 +400,7 @@ heightmap_from_files(const char * const inputfiles,
     map->heightmap = new_tile;
 
 exit:
-    if( tiles != NULL ){
+    if( file_count != 1 && tiles != NULL ){
         for(size_t i=0; i<file_count; i++){
             heightmap_destroy(&tiles[i]);
         }
@@ -511,7 +511,7 @@ exit:
     if( image_buffer != NULL ){
         free(image_buffer);
     }
-    
+
     if( row_pointers != NULL ){
         free(row_pointers);
     }
