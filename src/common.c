@@ -4,6 +4,75 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
+#include <errno.h>
+#include <math.h>
+
+typedef struct _coord_t{
+    float x;
+    float y;
+} coord_t, *pcoord_t;
+
+ #define max(a, b) \
+   ({ __typeof__ (a) _a = (a); \
+       __typeof__ (b) _b = (b); \
+     _a > _b ? _a : _b; })
+
+double haversine_formula(double th1, double ph1, double th2, double ph2)
+{
+    #define TO_RAD (3.1415926536 / 180)
+    int R = 6371;
+    double dx, dy, dz;
+    ph1 -= ph2;
+    ph1 *= TO_RAD, th1 *= TO_RAD, th2 *= TO_RAD;
+    dz = sin(th1) - sin(th2);
+    dx = cos(ph1) * cos(th1) - cos(th2);
+    dy = sin(ph1) * cos(th1);
+    return asin(sqrt(dx * dx + dy * dy + dz * dz) / 2) * 2 * R;
+}
+
+static inline int
+heightmap_get_resolution(vs_heightmap_t *heightmap, float *precise, float *rounded){
+    int status = 0;
+    double current_res_km;
+    double precise_resolution;
+    double rounded_resolution;
+
+    if( precise != NULL )
+        *precise = 0.0;
+    if( rounded != NULL )
+        *rounded = 0.0;
+
+    current_res_km = haversine_formula(heightmap->yll + (heightmap->cellsize * heightmap->rows),     
+                                       heightmap->xll,
+                                       heightmap->yll + (heightmap->cellsize * heightmap->rows),
+                                       heightmap->xll + (heightmap->cellsize * heightmap->cols));
+    
+    precise_resolution = (current_res_km/max(heightmap->cols, heightmap->rows)*1000);
+    // Round to nearest 0.5
+    rounded_resolution = precise_resolution < 0.5f ? 0.5f : ceil((precise_resolution * 2)+0.5) / 2;
+
+    if( precise != NULL )
+        *precise = precise_resolution;
+    if( rounded != NULL )
+        *rounded = rounded_resolution;
+
+exit:
+    return status;
+}
+
+static inline int
+heightmap_get_ppd(vs_heightmap_t *heightmap, size_t *ppdx, size_t *ppdy){
+    int status = 0;
+
+    double width_deg = heightmap->cellsize * heightmap->cols;
+    double height_deg = heightmap->cellsize * heightmap->rows;
+
+    *ppdx = heightmap->cols / width_deg;
+    *ppdy = heightmap->rows / height_deg;
+
+exit:
+    return status;
+}
 
 vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input){
     vs_heightmap_t heightmap;
@@ -55,24 +124,24 @@ vs_heightmap_t heightmap_from_file(FILE* inputfile){
 
     char* fragment = strtok(buffer, " \n");
     while (fragment != NULL){
-        if (!strcmp(fragment, "NROWS")){
+        if (!strcasecmp(fragment, "NROWS")){
             fragment = strtok(NULL, " \n"); map.rows = atoi(fragment);
             if ((r_parse = true) && c_parse){ map.heightmap = calloc(map.rows * map.cols, sizeof(float)); }
         }
-        else if (!strcmp(fragment, "NCOLS")){
+        else if (!strcasecmp(fragment, "NCOLS")){
             fragment = strtok(NULL, " \n"); map.cols = atoi(fragment);
             if ((c_parse = true) && r_parse){ map.heightmap = calloc(map.rows * map.cols, sizeof(float)); }
         }
-        else if (!strcmp(fragment, "XLLCORNER") || !strcmp(fragment, "XLLCENTER")){
-            if (!strcmp(fragment, "XLLCORNER")){ map.corner = true; } else { map.corner = false; }
-            fragment = strtok(NULL, " \n"); map.xll = atoi(fragment);
+        else if (!strcasecmp(fragment, "XLLCORNER") || !strcasecmp(fragment, "XLLCENTER")){
+            if (!strcasecmp(fragment, "XLLCORNER")){ map.corner = true; } else { map.corner = false; }
+            fragment = strtok(NULL, " \n"); map.xll = atof(fragment);
         }
-        else if (!strcmp(fragment, "YLLCORNER") || !strcmp(fragment, "YLLCENTER")){
-            if (!strcmp(fragment, "YLLCORNER")){ map.corner = true; } else { map.corner = false; }
-            fragment = strtok(NULL, " \n"); map.yll = atoi(fragment);
+        else if (!strcasecmp(fragment, "YLLCORNER") || !strcasecmp(fragment, "YLLCENTER")){
+            if (!strcasecmp(fragment, "YLLCORNER")){ map.corner = true; } else { map.corner = false; }
+            fragment = strtok(NULL, " \n"); map.yll = atof(fragment);
         }
-        else if (!strcmp(fragment, "CELLSIZE")){ fragment = strtok(NULL, " \n"); map.cellsize = atoi(fragment); }
-        else if (!strcmp(fragment, "NODATA_VALUE")){ fragment = strtok(NULL, " \n"); map.nodata = atof(fragment); }
+        else if (!strcasecmp(fragment, "CELLSIZE")){ fragment = strtok(NULL, " \n"); map.cellsize = atof(fragment); }
+        else if (!strcasecmp(fragment, "NODATA_VALUE")){ fragment = strtok(NULL, " \n"); map.nodata = atof(fragment); }
         else {
             if (map.heightmap != NULL && cellcount < map.cols*map.rows){
                 map.heightmap[cellcount++] = atof(fragment);
@@ -85,12 +154,229 @@ vs_heightmap_t heightmap_from_file(FILE* inputfile){
     return map;
 }
 
+void
+heightmap_destroy(vs_heightmap_t * const heightmap){
+    if( heightmap->heightmap != NULL ){
+        free(heightmap->heightmap);
+        heightmap->heightmap = NULL;
+    }
+}
+
+static int
+parse_input_files(const char * const inputfiles,
+                  size_t * const file_count,
+                  vs_heightmap_t ** tile_array){
+    int status = 0;
+    char *tmp_inputfiles;
+    char **filenames;
+    size_t count = 0;
+    vs_heightmap_t *tiles = NULL;
+
+    *file_count = 0;
+    *tile_array = NULL;
+
+    /* Copy the list as strtok is a destructive operation */
+    if( (tmp_inputfiles = calloc(strlen(inputfiles)+1, sizeof(char))) == NULL ){
+        status = ENOMEM;
+        goto exit;
+    }
+    strcpy(tmp_inputfiles, inputfiles);
+
+    /* Parse out the filenames from the list provided */
+    if( (filenames = (char**)malloc(sizeof(char*))) == NULL ){
+        status = ENOMEM;
+        goto exit;
+    }
+    filenames[count] = strtok(tmp_inputfiles, ",");
+    while(filenames[count] != NULL){
+        count++;
+        if( (filenames = (char**)realloc(filenames, sizeof(char*)*(count+1))) == NULL ){
+            status = ENOMEM;
+            goto exit;
+        }
+        filenames[count] = strtok(NULL, ",");
+    }
+
+    /* Read each file into a vs_heightmap_t */
+    tiles = (vs_heightmap_t*)calloc(count, sizeof(vs_heightmap_t));
+    for(size_t i=0; i<count; i++){
+        fprintf(stderr, "Loading file: %s\n", filenames[i]);
+        FILE *fp = fopen(filenames[i], "r");
+        if( fp == NULL ){
+            status = ENOENT;
+            goto exit;
+        }
+        tiles[i] = heightmap_from_file(fp);
+        fclose(fp);
+    }
+
+    *file_count = count;
+    *tile_array = tiles;
+
+exit:
+    if( tmp_inputfiles != NULL ){
+        free(tmp_inputfiles);
+    }
+    if( filenames != NULL ){
+        free(filenames);
+    }
+    if( status != 0 && tiles != NULL ){
+        for(size_t i=0; i<count; i++){
+            heightmap_destroy(&tiles[i]);
+        }
+        free(tiles);
+    }
+
+    return status;
+}
+
+int
+heightmap_from_files(const char * const inputfiles,
+                        vs_heightmap_t * const map){
+    int status = 0;
+    size_t file_count;
+    vs_heightmap_t *tiles;
+
+    if( (status = parse_input_files(inputfiles, &file_count, &tiles)) != 0 ){
+        goto exit;
+    }
+
+    /* If there is only one file, no need to join them together */
+    if( file_count == 1 ){
+        *map = *tiles;
+        goto exit;
+    }
+
+    /* Create one large tile */
+    coord_t lower_left;
+    coord_t upper_right;
+    uint16_t cellsize;
+    uint32_t rows;
+    uint32_t cols;
+    float max_resolution;
+    float min_resolution;
+    int nodata;
+    for(size_t i=0; i<file_count; i++){
+        coord_t next_ll;
+        coord_t next_ur;
+        float resolution;
+
+        next_ll.x = tiles[i].xll;
+        next_ll.y = tiles[i].yll;
+        next_ur.x = tiles[i].xll + (tiles[i].cellsize * tiles[i].cols);
+        next_ur.y = tiles[i].yll + (tiles[i].cellsize * tiles[i].rows);
+
+        if( (status = heightmap_get_resolution(&tiles[i], NULL, &resolution)) != 0 ){
+            goto exit;
+        }
+
+        if( i == 0 ){
+            lower_left = next_ll;
+            upper_right = next_ur;
+            min_resolution = resolution;
+            max_resolution = resolution;
+            nodata = tiles[i].nodata;
+        }else{
+            lower_left.x = fmin(next_ll.x, lower_left.x);
+            lower_left.y = fmin(next_ll.y, lower_left.y);
+            upper_right.x = fmax(next_ur.x, upper_right.x);
+            upper_right.y = fmax(next_ur.y, upper_right.y);
+            min_resolution = fmin(resolution, min_resolution);
+            max_resolution = fmax(resolution, max_resolution);
+        }
+    }
+
+    /* TODO: At present, we don't support tile resampling */
+    if( max_resolution != min_resolution ){
+        status = ENOSYS;
+        goto exit;
+    }
+
+    fprintf(stderr, "Using resolution: %.1f\n", min_resolution);
+
+    /* Now that we have the size of the giant tile, we need to stitch them together */
+    float width = upper_right.x - lower_left.x;
+    float height = upper_right.y - lower_left.y;
+    size_t new_height = 0;
+    size_t new_width = 0;
+    for( size_t i=0; i<file_count; i++ ){
+        float north_offset = upper_right.y - (tiles[i].yll + (tiles[i].cellsize * tiles[i].rows));
+        float west_offset = fmax(tiles[i].xll - lower_left.x, 0); // Catch minor floating point errors
+        size_t ppdx;
+        size_t ppdy;
+        if( (status = heightmap_get_ppd(&tiles[i], &ppdx, &ppdy)) != 0 ){
+            goto exit;
+        }
+
+        size_t north_pixel_offset = (size_t)(north_offset * ppdy);
+        size_t west_pixel_offset = (size_t)(west_offset * ppdx);
+
+        new_width = max(west_pixel_offset + tiles[i].cols, new_width);
+        new_height = max(north_pixel_offset + tiles[i].rows, new_height);
+    }
+
+    size_t new_tile_alloc = new_width * new_height;
+    float *new_tile = NULL;
+    if( (new_tile = calloc( new_tile_alloc, sizeof(float) )) == NULL ){
+        status = ENOMEM;
+        goto exit;
+    }
+
+    for( size_t i=0; i<file_count; i++ ){
+        float north_offset = upper_right.y - (tiles[i].yll + (tiles[i].cellsize * tiles[i].rows));
+        float west_offset = fmax(tiles[i].xll - lower_left.x, 0); // Catch minor floating point errors
+        size_t ppdx;
+        size_t ppdy;
+        if( (status = heightmap_get_ppd(&tiles[i], &ppdx, &ppdy)) != 0 ){
+            goto exit;
+        }
+
+        size_t north_pixel_offset = (size_t)(north_offset * ppdy);
+        size_t west_pixel_offset = (size_t)(west_offset * ppdx);
+
+        /* Copy it row-by-row from the tile */
+        for (size_t h = 0; h < tiles[i].rows; h++) {
+            float *dest_addr = &new_tile[ (north_pixel_offset+h)*new_width + west_pixel_offset];
+            float *src_addr = &tiles[i].heightmap[h*tiles[i].cols];
+            // Check if we might overflow
+            if ( dest_addr + tiles[i].cols > new_tile + new_tile_alloc || dest_addr < new_tile ){
+                fprintf(stderr, "[!] Overflow detected: %zu\n", i);
+                status = EFAULT;
+                goto exit;
+            }
+            memcpy( dest_addr, src_addr, tiles[i].cols * sizeof(float) );
+        }
+    }
+
+    map->rows = new_height;
+    map->cols = new_width;
+    map->cellsize = (upper_right.x - lower_left.x) / new_width;
+    map->corner = tiles[0].corner; // Copy from first tile
+    map->xll = lower_left.x;
+    map->yll = lower_left.y;
+    map->nodata = nodata;
+    map->heightmap = new_tile;
+
+exit:
+    if( tiles != NULL ){
+        for(size_t i=0; i<file_count; i++){
+            heightmap_destroy(&tiles[i]);
+        }
+        free(tiles);
+    }
+    if( status != 0 && new_tile != NULL ){
+        free(new_tile);
+    }
+
+    return status;
+}
+
 void heightmap_to_file(vs_heightmap_t heightmap, FILE* outputfile){
     fprintf(outputfile, "NCOLS %d\n", heightmap.cols);
     fprintf(outputfile, "NROWS %d\n", heightmap.rows);
-    fprintf(outputfile, "XLL%s %d\n", (heightmap.corner ? "CORNER" : "CENTER"), heightmap.xll);
-    fprintf(outputfile, "YLL%s %d\n", (heightmap.corner ? "CORNER" : "CENTER"), heightmap.yll);
-    fprintf(outputfile, "CELLSIZE %d\n", heightmap.cellsize);
+    fprintf(outputfile, "XLL%s %.6f\n", (heightmap.corner ? "CORNER" : "CENTER"), heightmap.xll);
+    fprintf(outputfile, "YLL%s %.6f\n", (heightmap.corner ? "CORNER" : "CENTER"), heightmap.yll);
+    fprintf(outputfile, "CELLSIZE %.6f\n", heightmap.cellsize);
 
     for (size_t row = 0; row < heightmap.rows; row++){
         for (size_t col = 0; col < heightmap.cols; col++){
@@ -124,9 +410,9 @@ vs_viewshed_t viewshed_from_array(uint32_t rows, uint32_t cols, bool *input){
 void viewshed_to_file(vs_viewshed_t viewshed, FILE* outputfile){
     fprintf(outputfile, "NCOLS %d\n", viewshed.cols);
     fprintf(outputfile, "NROWS %d\n", viewshed.rows);
-    fprintf(outputfile, "XLL%s %d\n", (viewshed.corner ? "CORNER" : "CENTER"), viewshed.xll);
-    fprintf(outputfile, "YLL%s %d\n", (viewshed.corner ? "CORNER" : "CENTER"), viewshed.yll);
-    fprintf(outputfile, "CELLSIZE %d\n", viewshed.cellsize);
+    fprintf(outputfile, "XLL%s %.6f\n", (viewshed.corner ? "CORNER" : "CENTER"), viewshed.xll);
+    fprintf(outputfile, "YLL%s %.6f\n", (viewshed.corner ? "CORNER" : "CENTER"), viewshed.yll);
+    fprintf(outputfile, "CELLSIZE %.6f\n", viewshed.cellsize);
 
     for (size_t row = 0; row < viewshed.rows; row++){
         for (size_t col = 0; col < viewshed.cols; col++){

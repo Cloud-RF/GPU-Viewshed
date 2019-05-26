@@ -12,11 +12,11 @@ extern "C" {
 typedef struct {
     uint32_t rows;      // Size and shape
     uint32_t cols;      // of grid
-    uint16_t cellsize;
+    float cellsize;
 
     bool corner;        // Corner or center origin
-    int32_t xll;        // x-lower-left corner/center
-    int32_t yll;        // y-lower-left corner/center
+    float xll;        // x-lower-left corner/center
+    float yll;        // y-lower-left corner/center
 
     int32_t nodata;     // null value. Default -9999
 
@@ -26,18 +26,20 @@ typedef struct {
 typedef struct {
     uint32_t rows;      // Size and shape
     uint32_t cols;      // of grid
-    uint16_t cellsize;
+    float cellsize;
 
     bool corner;        // Corner or center origin
-    int32_t xll;        // x-lower-left corner/center
-    int32_t yll;        // y-lower-left corner/center
+    float xll;        // x-lower-left corner/center
+    float yll;        // y-lower-left corner/center
 
     bool* viewshed;     // Data goes here
 } vs_viewshed_t;
 
 vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input);
 vs_heightmap_t heightmap_from_file(FILE* inputfile);
+int heightmap_from_files(const char * const inputfiles, vs_heightmap_t * const map);
 void heightmap_to_file(vs_heightmap_t heightmap, FILE* outputfile);
+void heightmap_destroy(vs_heightmap_t * const heightmap);
 
 vs_viewshed_t viewshed_from_array(uint32_t rows, uint32_t cols, bool *input);
 void viewshed_to_file(vs_viewshed_t viewshed, FILE* outputfile);

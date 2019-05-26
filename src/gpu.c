@@ -1,3 +1,4 @@
+#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
 #include <CL/opencl.h>
 #include <math.h>
 
@@ -132,26 +133,46 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
     }
 
     // Create the input and output arrays in device memory for our calculation
-    d_heightmap = clCreateBuffer(context, CL_MEM_READ_ONLY, heightmap.rows*heightmap.cols*sizeof(float), NULL, NULL);
-    d_viewshed  = clCreateBuffer(context, CL_MEM_WRITE_ONLY, heightmap.rows*heightmap.cols*sizeof(bool), NULL, NULL);
+    int errcode_ret = 0;
+    d_heightmap = clCreateBuffer(context, CL_MEM_READ_ONLY, heightmap.rows*heightmap.cols*sizeof(*heightmap.heightmap), NULL, &errcode_ret);
+    if( errcode_ret != CL_SUCCESS ){
+        fprintf(stderr, "Creating heightmap data buffer failed: %d\n", errcode_ret);
+        return viewshed;
+    }
+    d_viewshed  = clCreateBuffer(context, CL_MEM_WRITE_ONLY, heightmap.rows*heightmap.cols*sizeof(bool), NULL, &errcode_ret);
+    if( errcode_ret != CL_SUCCESS ){
+        fprintf(stderr, "Creating viewshed data buffer failed: %d\n", errcode_ret);
+        return viewshed;
+    }
 
     // Write our data set into the input array in device memory
-    err = clEnqueueWriteBuffer(queue, d_heightmap, CL_TRUE, 0, viewshed.cols*viewshed.rows*sizeof(float), heightmap.heightmap, 0, NULL, NULL);
+    err = clEnqueueWriteBuffer(queue, d_heightmap, CL_TRUE, 0, viewshed.cols*viewshed.rows*sizeof(*heightmap.heightmap), heightmap.heightmap, 0, NULL, NULL);
     if (err != CL_SUCCESS){
         fprintf(stderr, "Enqueing data buffer writes failed: %d\n", err);
         return viewshed;
     }
 
     // Set the kernel arguments
-    err  = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&d_heightmap);
-    err |= clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&d_viewshed);
-    err |= clSetKernelArg(kernel, 2, sizeof(uint32_t), (void *)&heightmap.cols);
-    err |= clSetKernelArg(kernel, 3, sizeof(uint32_t), (void *)&heightmap.rows);
-    err |= clSetKernelArg(kernel, 4, sizeof(uint32_t), (void *)&emitter_x);
-    err |= clSetKernelArg(kernel, 5, sizeof(uint32_t), (void *)&emitter_y);
-    err |= clSetKernelArg(kernel, 6, sizeof(int32_t), (void *)&emitter_z);
-    if (err != CL_SUCCESS){
-        fprintf(stderr, "Binding to platform failed: %d\n", err);
+    if( (err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&d_heightmap)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 0): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 1, sizeof(cl_mem), (void *)&d_viewshed)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 1): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 2, sizeof(uint32_t), (void *)&heightmap.cols)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 2): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 3, sizeof(uint32_t), (void *)&heightmap.rows)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 3): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 4, sizeof(uint32_t), (void *)&emitter_x)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 4): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 5, sizeof(uint32_t), (void *)&emitter_y)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 5): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 6, sizeof(int32_t), (void *)&emitter_z)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 6): %d\n", err);
         return viewshed;
     }
 
