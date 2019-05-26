@@ -45,6 +45,7 @@ int heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint3
 vs_viewshed_t viewshed_from_array(uint32_t rows, uint32_t cols, bool *input);
 void viewshed_to_file(vs_viewshed_t viewshed, FILE* outputfile);
 vs_viewshed_t viewshed_from_heightmap(vs_heightmap_t heightmap);
+int viewshed_to_png(vs_viewshed_t *heightmap, FILE *outputfile);
 
 #ifdef __cplusplus
 }
