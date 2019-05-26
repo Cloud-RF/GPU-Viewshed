@@ -8,6 +8,7 @@
 #include <math.h>
 #include <png.h>
 #include <assert.h>
+#include <dlfcn.h>
 
 typedef struct _coord_t{
     float x;
@@ -135,7 +136,8 @@ vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input){
     return heightmap;
 }
 
-vs_heightmap_t heightmap_from_file(FILE* inputfile){
+static vs_heightmap_t
+heightmap_from_file_asc(FILE* inputfile){
     vs_heightmap_t map;
     
     map.rows = 0;
@@ -194,6 +196,36 @@ vs_heightmap_t heightmap_from_file(FILE* inputfile){
     }
     
     return map;
+}
+
+vs_heightmap_t
+heightmap_from_file(FILE* inputfile){
+
+    /* Check if we have been passed a custom loader for proprietary tile formats */
+    char *lib_name = getenv("HEIGHTMAP_LOADER");
+    if( lib_name != NULL &&
+        access( lib_name, F_OK ) != -1 ) {
+
+        void *handle;
+
+        if( (handle = dlopen(lib_name, RTLD_LAZY)) == NULL ){
+            fprintf(stderr, "Error opening heightmap loader: %s\n", dlerror());
+            exit(errno);
+        }
+
+        vs_heightmap_t (*fn)(FILE*);
+        if( (fn = dlsym(handle, "heightmap_from_file")) == NULL ){
+            fprintf(stderr, "Error loading heightmap loader: %s\n", dlerror());
+            exit(errno);
+        }
+
+        vs_heightmap_t result = fn(inputfile);
+        dlclose(handle);
+        return result;
+    }
+
+    return heightmap_from_file_asc(inputfile);
+
 }
 
 void
