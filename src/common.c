@@ -1,5 +1,5 @@
 #include "common.h"
-
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -59,7 +59,7 @@ heightmap_get_resolution(vs_heightmap_t *heightmap, float *precise, float *round
     precise_resolution = (current_res_km/max(heightmap->cols, heightmap->rows)*1000);
     // Round to nearest 0.5
     rounded_resolution = precise_resolution < 0.5f ? 0.5f : ceil((precise_resolution * 2)+0.5) / 2;
-
+    
     if( precise != NULL )
         *precise = precise_resolution;
     if( rounded != NULL )
@@ -84,7 +84,7 @@ exit:
 }
 
 int
-heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint32_t *x, uint32_t *y){
+heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, float radius, uint32_t *x, uint32_t *y){
     int status = 0;
 
     *x = 0;
@@ -110,14 +110,15 @@ heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint32_t 
         goto exit;
     }
 
+// 51.8788 - 51.83613 = 0.04267 * 50e3 = 2133
     *x = (uint32_t)((lon - min_lon) * ppdx);
-    *y = (uint32_t)((lat - min_lat) * ppdy);
+    *y = (uint32_t)(heightmap->rows - (lat - min_lat) * ppdy);
 
 exit:
     return status;
 }
 
-vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input){
+vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, int *input){
     vs_heightmap_t heightmap;
 
     heightmap.rows = rows;
@@ -136,6 +137,7 @@ vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input){
     return heightmap;
 }
 
+// ASCII Grid https://en.wikipedia.org/wiki/Esri_grid
 static vs_heightmap_t
 heightmap_from_file_asc(FILE* inputfile){
     vs_heightmap_t map;
@@ -306,7 +308,7 @@ exit:
 
 int
 heightmap_from_files(const char * const inputfiles,
-                        vs_heightmap_t * const map){
+                        vs_heightmap_t * const map, float *tileResolution){
     int status = 0;
     size_t file_count;
     vs_heightmap_t *tiles;
@@ -365,6 +367,7 @@ heightmap_from_files(const char * const inputfiles,
         status = ENOSYS;
         goto exit;
     }
+    *tileResolution=min_resolution;
 
     fprintf(stderr, "Using resolution: %.1f\n", min_resolution);
 
@@ -421,7 +424,7 @@ heightmap_from_files(const char * const inputfiles,
             memcpy( dest_addr, src_addr, tiles[i].cols * sizeof(float) );
         }
     }
-
+    
     map->rows = new_height;
     map->cols = new_width;
     map->cellsize = (upper_right.x - lower_left.x) / new_width;

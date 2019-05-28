@@ -5,7 +5,7 @@
 #include "gpu.h"
 #include "common.h"
 
-const char *kernelSource =                                                                 "\n" \
+const char *kernelSourceOLD =                                                                 "\n" \
 "__kernel void vwshed(  __global float *heightmap,                                          \n" \
 "                       __global bool *viewshed,                                            \n" \
 "                       const unsigned int cols,                                            \n" \
@@ -24,24 +24,20 @@ const char *kernelSource =                                                      
 "                                                                                           \n" \
 "    int dx = (x > emitter_x ? x - emitter_x : emitter_x - x), sx = x < emitter_x ? 1 : -1; \n" \
 "    int dy = (y > emitter_y ? y - emitter_y : emitter_y - y), sy = y < emitter_y ? 1 : -1; \n" \
-"    int dz = emitter_z - heightmap[y*cols+x];                                              \n" \
+"    int dz = emitter_z - heightmap[y*cols+x];  //                                   \n" \
 "    int err = (dx>dy ? dx : -dy)/2, e2;                                                    \n" \
 "                                                                                           \n" \
-"    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
 "                                                                                           \n" \
-"    bool visible = true; // actually just a bool                                           \n" \
+"    bool visible = true;                                                                   \n" \
 "    viewshed[y*cols+x] = true;                                                             \n" \
-"    if (distance < 0.05 && dz > 0) {                                                       \n" \
-"        viewshed[y*cols+x] = visible;                                                      \n" \
-"        return;                                                                            \n" \
-"    }                                                                                      \n" \
 "                                                                                           \n" \
+"    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
 "    for (;;) {                                                                             \n" \
-"       float fraction = sqrt((float)(dx*dx + dy*dy)) / distance;                           \n" \
-"       float height_offset = fraction * dz;                                                \n" \
-"                                                                                           \n" \
+"       float fraction = sqrt((float)(cx*cx + cy*cy)) / distance;                           \n" \
+"       float height_offset = fraction * dz;                                         \n" \
 "       visible = visible && !signbit(((emitter_z - height_offset) - heightmap[cy*cols+cx]));\n" \
 "       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
+"       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                   \n" \
 "       e2 = err;                                                                           \n" \
 "       if (e2 > -dx) { err -= dy; cx += sx; }                                              \n" \
 "       if (e2 <  dy) { err += dx; cy += sy; }                                              \n" \
@@ -51,8 +47,49 @@ const char *kernelSource =                                                      
 "}                                                                                          \n" \
                                                                                            "\n" ;
 
-
-vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, int32_t emitter_z){
+const char *kernelSource =                                                                 "\n" \
+"__kernel void vwshed(  __global float *heightmap,                                          \n" \
+"                       __global bool *viewshed,                                            \n" \
+"                       const unsigned int cols,                                            \n" \
+"                       const unsigned int rows,                                            \n" \
+"                       const unsigned int emitter_x,                                       \n" \
+"                       const unsigned int emitter_y,                                       \n" \
+"                       const unsigned int emitter_z,                                       \n" \
+"                       const unsigned int radius)                                          \n" \
+"{                                                                                          \n" \
+"    // Get thread ID                                                                       \n" \
+"    int id = get_global_id(0);                                                             \n" \
+"                                                                                           \n" \
+"    int x = id % cols;                                                                     \n" \
+"    int y = id / cols;                                                                     \n" \
+"    int cx = x;                                                                            \n" \
+"    int cy = y;                                                                            \n" \
+"                                                                                           \n" \
+"    int dx = (x > emitter_x ? x - emitter_x : emitter_x - x), sx = x < emitter_x ? 1 : -1; \n" \
+"    int dy = (y > emitter_y ? y - emitter_y : emitter_y - y), sy = y < emitter_y ? 1 : -1; \n" \
+"    int dz = emitter_z - heightmap[y*cols+x];  //                                   \n" \
+"    int err = (dx>dy ? dx : -dy)/2, e2;                                                    \n" \
+"                                                                                           \n" \
+"    bool visible = false;                                                                   \n" \
+"    viewshed[y*cols+x] = true;                                                             \n" \
+"                                                                                           \n" \
+"    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
+"    for (;;) {                                                                             \n" \
+"       if(distance > radius){ break; }                                                \n" \
+"       float fraction = sqrt((float)(cx*cx + cy*cy)) / distance;                           \n" \
+"       float height_offset = fraction * dz;                                         \n" \
+"       visible = !signbit(((emitter_z - height_offset) - heightmap[cy*cols+cx]));\n" \
+"       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
+"       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                   \n" \
+"       e2 = err;                                                                           \n" \
+"       if (e2 > -dx) { err -= dy; cx += sx; }                                              \n" \
+"       if (e2 <  dy) { err += dx; cy += sy; }                                              \n" \
+"    }                                                                                      \n" \
+"    viewshed[y*cols+x] = visible;                                                          \n" \
+"    return;                                                                                \n" \
+"}                                                                                          \n" \
+                                                                                           "\n" ;
+vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, uint32_t emitter_z, uint32_t radius){
     vs_viewshed_t viewshed = viewshed_from_heightmap(heightmap);
 
     // Device buffers
@@ -70,7 +107,7 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
     cl_int err;
 
     // Number of work items in each local work group
-    localSize = 32;
+    localSize = 1000;
 
     // Number of total work items - localSize must be devisor
     globalSize = ceil(heightmap.cols*heightmap.rows/(float)localSize)*localSize;
@@ -134,7 +171,7 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
 
     // Create the input and output arrays in device memory for our calculation
     int errcode_ret = 0;
-    d_heightmap = clCreateBuffer(context, CL_MEM_READ_ONLY, heightmap.rows*heightmap.cols*sizeof(*heightmap.heightmap), NULL, &errcode_ret);
+    d_heightmap = clCreateBuffer(context, CL_MEM_READ_ONLY, heightmap.rows*heightmap.cols*sizeof(float), NULL, &errcode_ret);
     if( errcode_ret != CL_SUCCESS ){
         fprintf(stderr, "Creating heightmap data buffer failed: %d\n", errcode_ret);
         return viewshed;
@@ -145,6 +182,7 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
         return viewshed;
     }
 
+    fprintf(stderr, "x: %d y: %d z: %d Terrain at source: %f\n", emitter_x, emitter_y, emitter_z, heightmap.heightmap[emitter_y*heightmap.cols+emitter_x]);
     // Write our data set into the input array in device memory
     err = clEnqueueWriteBuffer(queue, d_heightmap, CL_TRUE, 0, viewshed.cols*viewshed.rows*sizeof(*heightmap.heightmap), heightmap.heightmap, 0, NULL, NULL);
     if (err != CL_SUCCESS){
@@ -171,8 +209,11 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
     }else if( (err = clSetKernelArg(kernel, 5, sizeof(uint32_t), (void *)&emitter_y)) != CL_SUCCESS ){
         fprintf(stderr, "Binding to platform failed (arg 5): %d\n", err);
         return viewshed;
-    }else if( (err = clSetKernelArg(kernel, 6, sizeof(int32_t), (void *)&emitter_z)) != CL_SUCCESS ){
+    }else if( (err = clSetKernelArg(kernel, 6, sizeof(uint32_t), (void *)&emitter_z)) != CL_SUCCESS ){
         fprintf(stderr, "Binding to platform failed (arg 6): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 7, sizeof(uint32_t), (void *)&radius)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 7): %d\n", err);
         return viewshed;
     }
 
