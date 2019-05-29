@@ -35,7 +35,4 @@ tools/gpuviewshed/viewshed: tools/gpuviewshed/main.c libgpu.a
 toolclean:
 	rm -f tools/cpuviewshed/viewshed tools/gpuviewshed/viewshed
 
-	$(CXX) $(GTEST_CPPFLAGS) -I$(GTEST_DIR) $(GTEST_CXXFLAGS) -c \
-            $(GTEST_DIR)/src/gtest_main.cc -o $@
-
 

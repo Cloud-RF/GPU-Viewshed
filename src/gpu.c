@@ -5,48 +5,6 @@
 #include "gpu.h"
 #include "common.h"
 
-const char *kernelSourceOLD =                                                                 "\n" \
-"__kernel void vwshed(  __global float *heightmap,                                          \n" \
-"                       __global bool *viewshed,                                            \n" \
-"                       const unsigned int cols,                                            \n" \
-"                       const unsigned int rows,                                            \n" \
-"                       const unsigned int emitter_x,                                       \n" \
-"                       const unsigned int emitter_y,                                       \n" \
-"                       const unsigned int emitter_z)                                       \n" \
-"{                                                                                          \n" \
-"    // Get thread ID                                                                       \n" \
-"    int id = get_global_id(0);                                                             \n" \
-"                                                                                           \n" \
-"    int x = id % cols;                                                                     \n" \
-"    int y = id / cols;                                                                     \n" \
-"    int cx = x;                                                                            \n" \
-"    int cy = y;                                                                            \n" \
-"                                                                                           \n" \
-"    int dx = (x > emitter_x ? x - emitter_x : emitter_x - x), sx = x < emitter_x ? 1 : -1; \n" \
-"    int dy = (y > emitter_y ? y - emitter_y : emitter_y - y), sy = y < emitter_y ? 1 : -1; \n" \
-"    int dz = emitter_z - heightmap[y*cols+x];  //                                   \n" \
-"    int err = (dx>dy ? dx : -dy)/2, e2;                                                    \n" \
-"                                                                                           \n" \
-"                                                                                           \n" \
-"    bool visible = true;                                                                   \n" \
-"    viewshed[y*cols+x] = true;                                                             \n" \
-"                                                                                           \n" \
-"    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
-"    for (;;) {                                                                             \n" \
-"       float fraction = sqrt((float)(cx*cx + cy*cy)) / distance;                           \n" \
-"       float height_offset = fraction * dz;                                         \n" \
-"       visible = visible && !signbit(((emitter_z - height_offset) - heightmap[cy*cols+cx]));\n" \
-"       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
-"       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                   \n" \
-"       e2 = err;                                                                           \n" \
-"       if (e2 > -dx) { err -= dy; cx += sx; }                                              \n" \
-"       if (e2 <  dy) { err += dx; cy += sy; }                                              \n" \
-"    }                                                                                      \n" \
-"    viewshed[y*cols+x] = visible;                                                          \n" \
-"    return;                                                                                \n" \
-"}                                                                                          \n" \
-                                                                                           "\n" ;
-
 const char *kernelSource =                                                                 "\n" \
 "__kernel void vwshed(  __global float *heightmap,                                          \n" \
 "                       __global bool *viewshed,                                            \n" \
@@ -67,18 +25,17 @@ const char *kernelSource =                                                      
 "                                                                                           \n" \
 "    int dx = (x > emitter_x ? x - emitter_x : emitter_x - x), sx = x < emitter_x ? 1 : -1; \n" \
 "    int dy = (y > emitter_y ? y - emitter_y : emitter_y - y), sy = y < emitter_y ? 1 : -1; \n" \
-"    int dz = emitter_z - heightmap[y*cols+x];  //                                   \n" \
+"    int dz = emitter_z + heightmap[y*cols+x];  //                                   \n" \
 "    int err = (dx>dy ? dx : -dy)/2, e2;                                                    \n" \
 "                                                                                           \n" \
-"    bool visible = false;                                                                   \n" \
-"    viewshed[y*cols+x] = true;                                                             \n" \
+"    bool visible = true;                                                                   \n" \
 "                                                                                           \n" \
 "    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
 "    for (;;) {                                                                             \n" \
-"       if(distance > radius){ break; }                                                \n" \
-"       float fraction = sqrt((float)(cx*cx + cy*cy)) / distance;                           \n" \
-"       float height_offset = fraction * dz;                                         \n" \
-"       visible = !signbit(((emitter_z - height_offset) - heightmap[cy*cols+cx]));\n" \
+"       if(distance > radius){ visible = false; break; }                                                \n" \
+"       float fraction = sqrt((float)(dx*dx + dy*dy)) / distance;                           \n" \
+"       int height_offset = fraction * dz;                                         \n" \
+"       if (heightmap[cy*cols+cx] > height_offset){ visible = false; }\n" \
 "       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
 "       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                   \n" \
 "       e2 = err;                                                                           \n" \
