@@ -33,18 +33,18 @@ int main(int argc, char* argv[]){
     }
 
     fprintf(stderr, "Heightmap Info:\n\trows: %u\n\tcols: %u\n\txll:  %.6f\n\tyll:  %.6f\n\tresolution:  %.0f\n", heightmap.rows, heightmap.cols, heightmap.xll, heightmap.yll, resolution);
-    
+
     uint32_t x;
     uint32_t y;
     uint32_t radpx = (int)((radius*1000) / resolution);
-    if( (heightmap_wgs84_to_xy(&heightmap, lon, lat, radius, &x, &y)) != 0 ){
+    uint32_t ppd;
+    if( (heightmap_wgs84_to_xy(&heightmap, lon, lat, &x, &y, &ppd)) != 0 ){
         goto exit;
     }
 
-
     vs_viewshed_t viewshed = calculate_viewshed(heightmap, x, y, z, radpx); 
 
-    if( (status = viewshed_to_png(&viewshed, viewshed_file)) != 0 ){
+    if( (status = viewshed_to_png(&viewshed, viewshed_file, x, y, radpx)) != 0 ){
         fprintf(stderr, "Error outputting viewshed\n");
         goto exit;
     }

@@ -84,9 +84,8 @@ exit:
 }
 
 int
-heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, float radius, uint32_t *x, uint32_t *y){
+heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint32_t *x, uint32_t *y, uint32_t *ppd){
     int status = 0;
-
     *x = 0;
     *y = 0;
 
@@ -103,17 +102,15 @@ heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, float rad
         status = EINVAL;
         goto exit;
     }
-
     size_t ppdx;
     size_t ppdy;
+
     if( (status = heightmap_get_ppd(heightmap, &ppdx, &ppdy)) != 0 ){
         goto exit;
     }
-
-// 51.8788 - 51.83613 = 0.04267 * 50e3 = 2133
+    *ppd=ppdx;
     *x = (uint32_t)((lon - min_lon) * ppdx);
     *y = (uint32_t)(heightmap->rows - (lat - min_lat) * ppdy);
-
 exit:
     return status;
 }
@@ -141,7 +138,6 @@ vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, int *input){
 static vs_heightmap_t
 heightmap_from_file_asc(FILE* inputfile){
     vs_heightmap_t map;
-    
     map.rows = 0;
     map.cols = 0;
     map.cellsize = 1;
@@ -162,7 +158,7 @@ heightmap_from_file_asc(FILE* inputfile){
     char* buffer = calloc(fsize, sizeof(char)); // TODO: needs errorchecked
     size_t result = fread(buffer, 1, fsize, inputfile); // TODO: needs errorchecked for != fsize
     buffer[fsize+sizeof(char)-1] = '\0';
-    
+
     // Parse file
     bool r_parse = false;
     bool c_parse = false;
@@ -196,18 +192,15 @@ heightmap_from_file_asc(FILE* inputfile){
 
         fragment = strtok(NULL, " \n");
     }
-    
+
     return map;
 }
 
 vs_heightmap_t
 heightmap_from_file(FILE* inputfile){
-
-    /* Check if we have been passed a custom loader for proprietary tile formats */
     char *lib_name = getenv("HEIGHTMAP_LOADER");
     if( lib_name != NULL &&
         access( lib_name, F_OK ) != -1 ) {
-
         void *handle;
 
         if( (handle = dlopen(lib_name, RTLD_LAZY)) == NULL ){
@@ -312,7 +305,7 @@ heightmap_from_files(const char * const inputfiles,
     int status = 0;
     size_t file_count;
     vs_heightmap_t *tiles;
-
+    float resolution;
     if( (status = parse_input_files(inputfiles, &file_count, &tiles)) != 0 ){
         goto exit;
     }
@@ -320,6 +313,7 @@ heightmap_from_files(const char * const inputfiles,
     /* If there is only one file, no need to join them together */
     if( file_count == 1 ){
         *map = tiles[0];
+        status = heightmap_get_resolution(&tiles[0], NULL, &resolution); 
         goto exit;
     }
 
@@ -335,7 +329,6 @@ heightmap_from_files(const char * const inputfiles,
     for(size_t i=0; i<file_count; i++){
         coord_t next_ll;
         coord_t next_ur;
-        float resolution;
 
         next_ll.x = tiles[i].xll;
         next_ll.y = tiles[i].yll;
@@ -367,9 +360,7 @@ heightmap_from_files(const char * const inputfiles,
         status = ENOSYS;
         goto exit;
     }
-    *tileResolution=min_resolution;
 
-    fprintf(stderr, "Using resolution: %.1f\n", min_resolution);
 
     /* Now that we have the size of the giant tile, we need to stitch them together */
     float width = upper_right.x - lower_left.x;
@@ -384,9 +375,9 @@ heightmap_from_files(const char * const inputfiles,
         if( (status = heightmap_get_ppd(&tiles[i], &ppdx, &ppdy)) != 0 ){
             goto exit;
         }
-
+        
         size_t north_pixel_offset = (size_t)(north_offset * ppdy);
-        size_t west_pixel_offset = (size_t)(west_offset * ppdx);
+        size_t west_pixel_offset = (size_t)(round((west_offset * ppdx)/10)*10); // eg. 4999 = 5000
 
         new_width = max(west_pixel_offset + tiles[i].cols, new_width);
         new_height = max(north_pixel_offset + tiles[i].rows, new_height);
@@ -445,6 +436,10 @@ exit:
         free(new_tile);
     }
 
+    *tileResolution=resolution;
+
+    fprintf(stderr, "Using resolution: %.1f\n", resolution);
+
     return status;
 }
 
@@ -467,7 +462,7 @@ void heightmap_to_file(vs_heightmap_t heightmap, FILE* outputfile){
 }
 
 int
-viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile){
+viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile, int x, int y, int crop){
     int status;
     prgbt image_buffer;
     png_structp png_ptr;
@@ -497,8 +492,11 @@ viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile){
         status = ENOMEM;
         goto exit;
     }
-    for(size_t i = 0; i<viewshed->rows; i++){
-        row_pointers[i] = (png_bytep) &image_buffer[i * viewshed->cols];
+
+    y-=(crop/2); // top of circle
+    x-=(crop/2); // left of circle
+    for(size_t i = 0; i<crop; i++){
+        row_pointers[i] = (png_bytep) &image_buffer[((i+y) * viewshed->rows)+x];
     }
 
     /* Do PNG image processing */
@@ -525,16 +523,13 @@ viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile){
     png_set_compression_level(png_ptr, COMPRESSION);
 #endif
 
-    png_set_IHDR(png_ptr, info_ptr, viewshed->cols, viewshed->rows, 8 /*bit_depth*/,
+    png_set_IHDR(png_ptr, info_ptr, crop, crop, 8 /*bit_depth*/,
                     PNG_COLOR_TYPE_RGB,
                     PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
 
     png_write_info(png_ptr, info_ptr);
-
     png_write_image(png_ptr, row_pointers);
-
     png_write_end(png_ptr, NULL);
-
     status = 0;
 
 cleanup:

@@ -10,7 +10,9 @@
 int main(int argc, char* argv[]){
     int status = 0;
     vs_heightmap_t heightmap = {};
-    float resolution = 2;
+    float resolution = -1;
+    float north,east,south,west;
+
     if (argc != 7){ printf("Expects 6 arguments\n"); return 1; }
     // name x y z rad tiles PNG
     //    0 1 2 3 4 5 6
@@ -33,24 +35,38 @@ int main(int argc, char* argv[]){
     }
 
     fprintf(stderr, "Heightmap Info:\n\trows: %u\n\tcols: %u\n\txll:  %.6f\n\tyll:  %.6f\n\tresolution:  %.0f\n", heightmap.rows, heightmap.cols, heightmap.xll, heightmap.yll, resolution);
-    
+
     uint32_t x;
     uint32_t y;
     uint32_t radpx = (int)((radius*1000) / resolution);
-    if( (heightmap_wgs84_to_xy(&heightmap, lon, lat, radius, &x, &y)) != 0 ){
+    uint32_t ppd;
+    if( (heightmap_wgs84_to_xy(&heightmap, lon, lat, &x, &y, &ppd)) != 0 ){
         goto exit;
     }
 
-
+    // Sanity check cropping is possible within available heightmap
+    if(x+radpx>heightmap.cols){
+        fprintf(stderr,"Cropping is %d pixels beyond X limit (%d)!\n",(x+radpx)-heightmap.cols,heightmap.cols);
+        radpx-=(x+radpx)-heightmap.cols;
+    }
+    if(y+radpx>heightmap.rows){
+        fprintf(stderr,"Cropping is %d pixels beyond Y limit (%d)!\n",(y+radpx)-heightmap.rows,heightmap.rows);
+        radpx-=(y+radpx)-heightmap.rows;
+    }
     vs_viewshed_t viewshed = gpu_calculate_viewshed(heightmap, x, y, z, radpx);
 
-    if( (status = viewshed_to_png(&viewshed, viewshed_file)) != 0 ){
+    if( (status = viewshed_to_png(&viewshed, viewshed_file, x, y, radpx*2)) != 0 ){
         fprintf(stderr, "Error outputting viewshed\n");
         goto exit;
     }
+    
+    north=lat+(radpx/ppd);
+    east=lon+(radpx/ppd);
+    south=lat-(radpx/ppd);
+    west=lon-(radpx/ppd);
+    fprintf(stdout,"{\"radpx\": %d, \"ppd\": %d, \"north\": %.6f, \"east\": %.6f, \"south\": %.6f, \"west\": %.6f}\n",radpx,ppd,north,east,south,west);
 
 exit:
     heightmap_destroy(&heightmap);
-
     return status;
 }

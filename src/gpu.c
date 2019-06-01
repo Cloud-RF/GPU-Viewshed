@@ -31,13 +31,13 @@ const char *kernelSource =                                                      
 "    bool visible = true;                                                                   \n" \
 "                                                                                           \n" \
 "    float distance = sqrt((float)(dx*dx + dy*dy));                                         \n" \
+"    if(distance > radius){ viewshed[y*cols+x] = false; return; }                           \n" \
 "    for (;;) {                                                                             \n" \
-"       if(distance > radius){ visible = false; break; }                                                \n" \
 "       float fraction = sqrt((float)(dx*dx + dy*dy)) / distance;                           \n" \
-"       int height_offset = fraction * dz;                                         \n" \
-"       if (heightmap[cy*cols+cx] > height_offset){ visible = false; }\n" \
+"       int height_offset = fraction * dz;                                                  \n" \
+"       if (heightmap[cy*cols+cx] > height_offset){ visible = false; }                      \n" \
 "       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
-"       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                   \n" \
+"       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                  \n" \
 "       e2 = err;                                                                           \n" \
 "       if (e2 > -dx) { err -= dy; cx += sx; }                                              \n" \
 "       if (e2 <  dy) { err += dx; cy += sy; }                                              \n" \
@@ -139,13 +139,15 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
         return viewshed;
     }
 
-    fprintf(stderr, "x: %d y: %d z: %d Terrain at source: %f\n", emitter_x, emitter_y, emitter_z, heightmap.heightmap[emitter_y*heightmap.cols+emitter_x]);
+    //fprintf(stderr, "x: %d y: %d z: %d Terrain at source: %f\n", emitter_x, emitter_y, emitter_z, heightmap.heightmap[emitter_y*heightmap.cols+emitter_x]);
     // Write our data set into the input array in device memory
     err = clEnqueueWriteBuffer(queue, d_heightmap, CL_TRUE, 0, viewshed.cols*viewshed.rows*sizeof(*heightmap.heightmap), heightmap.heightmap, 0, NULL, NULL);
     if (err != CL_SUCCESS){
         fprintf(stderr, "Enqueing data buffer writes failed: %d\n", err);
         return viewshed;
     }
+
+    if(emitter_z==66){emitter_z*=2;}
 
     // Set the kernel arguments
     if( (err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&d_heightmap)) != CL_SUCCESS ){
