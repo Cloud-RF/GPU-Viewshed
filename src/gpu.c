@@ -12,7 +12,8 @@ const char *kernelSource =                                                      
 "                       const unsigned int rows,                                            \n" \
 "                       const unsigned int emitter_x,                                       \n" \
 "                       const unsigned int emitter_y,                                       \n" \
-"                       const unsigned int emitter_z,                                       \n" \
+"                       const unsigned int TxH,                                             \n" \
+"                       const unsigned int RxH,                                             \n" \
 "                       const unsigned int radius)                                          \n" \
 "{                                                                                          \n" \
 "    // Get thread ID                                                                       \n" \
@@ -25,7 +26,7 @@ const char *kernelSource =                                                      
 "                                                                                           \n" \
 "    int dx = (x > emitter_x ? x - emitter_x : emitter_x - x), sx = x < emitter_x ? 1 : -1; \n" \
 "    int dy = (y > emitter_y ? y - emitter_y : emitter_y - y), sy = y < emitter_y ? 1 : -1; \n" \
-"    int dz = emitter_z + heightmap[y*cols+x];  //                                   \n" \
+"    int dz = TxH + heightmap[y*cols+x];  //                                   \n" \
 "    int err = (dx>dy ? dx : -dy)/2, e2;                                                    \n" \
 "                                                                                           \n" \
 "    bool visible = true;                                                                   \n" \
@@ -35,7 +36,7 @@ const char *kernelSource =                                                      
 "    for (;;) {                                                                             \n" \
 "       float fraction = sqrt((float)(dx*dx + dy*dy)) / distance;                           \n" \
 "       int height_offset = fraction * dz;                                                  \n" \
-"       if (heightmap[cy*cols+cx] > height_offset){ visible = false; }                      \n" \
+"       if (heightmap[cy*cols+cx] > height_offset+RxH){ visible = false; }                  \n" \
 "       if (cx == emitter_x && cy == emitter_y){ break; }                                   \n" \
 "       if (sqrt((float)(cx*cx + cy*cy)) > cols){ break; }                                  \n" \
 "       e2 = err;                                                                           \n" \
@@ -46,7 +47,7 @@ const char *kernelSource =                                                      
 "    return;                                                                                \n" \
 "}                                                                                          \n" \
                                                                                            "\n" ;
-vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, uint32_t emitter_z, uint32_t radius){
+vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, uint32_t TxH, uint32_t RxH, uint32_t radius){
     vs_viewshed_t viewshed = viewshed_from_heightmap(heightmap);
 
     // Device buffers
@@ -139,7 +140,7 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
         return viewshed;
     }
 
-    //fprintf(stderr, "x: %d y: %d z: %d Terrain at source: %f\n", emitter_x, emitter_y, emitter_z, heightmap.heightmap[emitter_y*heightmap.cols+emitter_x]);
+    //fprintf(stderr, "x: %d y: %d z: %d Terrain at source: %f\n", emitter_x, emitter_y, TxH, heightmap.heightmap[emitter_y*heightmap.cols+emitter_x]);
     // Write our data set into the input array in device memory
     err = clEnqueueWriteBuffer(queue, d_heightmap, CL_TRUE, 0, viewshed.cols*viewshed.rows*sizeof(*heightmap.heightmap), heightmap.heightmap, 0, NULL, NULL);
     if (err != CL_SUCCESS){
@@ -147,7 +148,7 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
         return viewshed;
     }
 
-    if(emitter_z==66){emitter_z*=2;}
+    if(TxH==66){TxH*=2;}
 
     // Set the kernel arguments
     if( (err = clSetKernelArg(kernel, 0, sizeof(cl_mem), (void *)&d_heightmap)) != CL_SUCCESS ){
@@ -168,11 +169,14 @@ vs_viewshed_t gpu_calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_
     }else if( (err = clSetKernelArg(kernel, 5, sizeof(uint32_t), (void *)&emitter_y)) != CL_SUCCESS ){
         fprintf(stderr, "Binding to platform failed (arg 5): %d\n", err);
         return viewshed;
-    }else if( (err = clSetKernelArg(kernel, 6, sizeof(uint32_t), (void *)&emitter_z)) != CL_SUCCESS ){
+    }else if( (err = clSetKernelArg(kernel, 6, sizeof(uint32_t), (void *)&TxH)) != CL_SUCCESS ){
         fprintf(stderr, "Binding to platform failed (arg 6): %d\n", err);
         return viewshed;
-    }else if( (err = clSetKernelArg(kernel, 7, sizeof(uint32_t), (void *)&radius)) != CL_SUCCESS ){
+    }else if( (err = clSetKernelArg(kernel, 7, sizeof(uint32_t), (void *)&RxH)) != CL_SUCCESS ){
         fprintf(stderr, "Binding to platform failed (arg 7): %d\n", err);
+        return viewshed;
+    }else if( (err = clSetKernelArg(kernel, 8, sizeof(uint32_t), (void *)&radius)) != CL_SUCCESS ){
+        fprintf(stderr, "Binding to platform failed (arg 8): %d\n", err);
         return viewshed;
     }
 
