@@ -12,11 +12,10 @@ extern "C" {
 typedef struct {
     uint32_t rows;      // Size and shape
     uint32_t cols;      // of grid
-    uint16_t cellsize;
-
+    float cellsize;
     bool corner;        // Corner or center origin
-    int32_t xll;        // x-lower-left corner/center
-    int32_t yll;        // y-lower-left corner/center
+    float xll;        // x-lower-left corner/center
+    float yll;        // y-lower-left corner/center
 
     int32_t nodata;     // null value. Default -9999
 
@@ -26,22 +25,26 @@ typedef struct {
 typedef struct {
     uint32_t rows;      // Size and shape
     uint32_t cols;      // of grid
-    uint16_t cellsize;
+    float cellsize;
 
     bool corner;        // Corner or center origin
-    int32_t xll;        // x-lower-left corner/center
-    int32_t yll;        // y-lower-left corner/center
+    float xll;        // x-lower-left corner/center
+    float yll;        // y-lower-left corner/center
 
     bool* viewshed;     // Data goes here
 } vs_viewshed_t;
 
-vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, float *input);
+vs_heightmap_t heightmap_from_array(uint32_t rows, uint32_t cols, int *input);
 vs_heightmap_t heightmap_from_file(FILE* inputfile);
+int heightmap_from_files(const char * const inputfiles, vs_heightmap_t * const map, float *resolution);
 void heightmap_to_file(vs_heightmap_t heightmap, FILE* outputfile);
+void heightmap_destroy(vs_heightmap_t * const heightmap);
+int heightmap_wgs84_to_xy(vs_heightmap_t *heightmap, float lon, float lat, uint32_t *x, uint32_t *y, uint32_t *ppd);
 
 vs_viewshed_t viewshed_from_array(uint32_t rows, uint32_t cols, bool *input);
 void viewshed_to_file(vs_viewshed_t viewshed, FILE* outputfile);
 vs_viewshed_t viewshed_from_heightmap(vs_heightmap_t heightmap);
+int viewshed_to_png(vs_viewshed_t *heightmap, FILE *outputfile, int x, int y, int radpx);
 
 #ifdef __cplusplus
 }

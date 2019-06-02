@@ -1,14 +1,42 @@
-GPU Accelerated Viewshed Calculations
-=====================================
+GPU accelerated viewshed calculator
+===================================
 
-A lot of telcos / rural network providers need to place radio masts to serve their customers. The ideal placement
-of these masks can be hard, needing to balance a number of hard, technical requirements (power, line of sight, etc)
-with soft, social requirements (land rights, planning permission, etc).
+An open source CLI tool for fast viewshed generation using [OpenCL](https://www.khronos.org/opencl/).
+Based upon a Software Engineering [Masters project](https://github.com/AbstractBeliefs/hons) by [Gareth Pulham MEng](https://github.com/AbstractBeliefs).
+Modified for server integration by [Alex Farrant](https://github.com/Cloud-RF) and [Gareth Evans](https://github.com/kryc).
 
-Tools currently exist for calculating mast lines of sights ([viewsheds](https://en.wikipedia.org/wiki/Viewshed)), but
-they tend to be proprietary, slow, or not automatable. My honours project as part of the completion of my MEng Software
-Engineering programme at Napier University intends to:
+## Requirements
+* GPU graphics card
+* OpenCL
+* clang
+* libPNG
 
-1. Investigate the validity and effectiveness of GPU acceleration of viewshed calculations
-2. Develop a core library that allows developers to embed such acceleration into tools
-3. Develop example tools using this library.
+### Preparation (Ubuntu)
+`apt install nvidia-driver-390 clang ocl-icd-opencl-dev`
+
+## Build
+
+`make all`
+
+## Test
+`./test.sh`
+
+## Arguments
+-n latitude (WGS84 Decimal degrees)
+
+-e longitude  (WGS84 Decimal degrees)
+
+-a Tx height AGL (m)
+
+-b Rx height AGL (m) 
+
+-r Radius (km)
+
+-t ASCII grid tiles (Comma separated) 
+
+-p PNG filename
+
+
+## Example
+./viewshed -n 52.123 -e -1.123 -a 8 -b 1 -r 2 -t DSM.asc -p viewshed.png
+

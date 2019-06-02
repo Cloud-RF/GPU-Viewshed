@@ -1,4 +1,3 @@
-#include <stdint.h>
 #include <math.h>
 
 #include "cpu.h"
@@ -46,7 +45,7 @@ void curve_map(vs_heightmap_t map){
     return;
 }
 
-vs_viewshed_t calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, int32_t emitter_z){
+vs_viewshed_t calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, uint32_t emitter_y, uint32_t emitter_z, uint32_t radius){
     vs_viewshed_t viewshed = viewshed_from_heightmap(heightmap);
 
     for (uint32_t ty = 0; ty < heightmap.rows; ty++)
@@ -63,6 +62,7 @@ vs_viewshed_t calculate_viewshed(vs_heightmap_t heightmap, uint32_t emitter_x, u
         bool visible = true;
         if (distance == 0 && dz > 0){ viewshed.viewshed[y*viewshed.cols+x] = visible; continue; }
         for (;;){
+            if(distance > radius){ break; }       
             float fraction = sqrt(dx*dx + dy*dy) / distance;
             int height_offset = fraction * dz;
             if (heightmap.heightmap[y*heightmap.cols+x] > emitter_z - height_offset){ visible = false; }
