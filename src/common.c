@@ -269,7 +269,7 @@ parse_input_files(const char * const inputfiles,
     /* Read each file into a vs_heightmap_t */
     tiles = (vs_heightmap_t*)calloc(count, sizeof(vs_heightmap_t));
     for(size_t i=0; i<count; i++){
-        fprintf(stderr, "Loading file: %s\n", filenames[i]);
+        //fprintf(stderr, "Loading file: %s\n", filenames[i]);
         FILE *fp = fopen(filenames[i], "r");
         if( fp == NULL ){
             status = ENOENT;
@@ -356,10 +356,10 @@ heightmap_from_files(const char * const inputfiles,
     }
 
     /* TODO: At present, we don't support tile resampling */
-    if( max_resolution != min_resolution ){
+    /*if( max_resolution != min_resolution ){
         status = ENOSYS;
         goto exit;
-    }
+    }*/
 
 
     /* Now that we have the size of the giant tile, we need to stitch them together */
@@ -367,6 +367,7 @@ heightmap_from_files(const char * const inputfiles,
     float height = upper_right.y - lower_left.y;
     size_t new_height = 0;
     size_t new_width = 0;
+
     for( size_t i=0; i<file_count; i++ ){
         float north_offset = upper_right.y - (tiles[i].yll + (tiles[i].cellsize * tiles[i].rows));
         float west_offset = fmax(tiles[i].xll - lower_left.x, 0); // Catch minor floating point errors
@@ -430,15 +431,16 @@ exit:
         for(size_t i=0; i<file_count; i++){
             heightmap_destroy(&tiles[i]);
         }
+
         free(tiles);
     }
     if( status != 0 && new_tile != NULL ){
-        free(new_tile);
+        //free(new_tile);
     }
 
     *tileResolution=resolution;
 
-    fprintf(stderr, "Using resolution: %.1f\n", resolution);
+    //fprintf(stderr, "Using resolution %.1f with status %d\n", resolution, status);
 
     return status;
 }
@@ -468,9 +470,12 @@ viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile, int x, int y, int cro
     png_structp png_ptr;
     png_infop info_ptr;
     png_bytep *row_pointers;
-    rgb_t black = {0,0,0};
+    rgb_t green = {0,255,0};
 
     assert(sizeof(rgb_t) == 3);
+
+    if(viewshed->rows!=viewshed->cols)
+        viewshed->rows=viewshed->cols;
 
     /* Create a white image buffer */
     size_t image_size = viewshed->rows * viewshed->cols * sizeof(rgb_t);
@@ -483,9 +488,11 @@ viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile, int x, int y, int cro
     /* Loop through and set the remaining pixels */
     for(size_t x=0; x<viewshed->cols; x++)
     for(size_t y=0; y<viewshed->rows; y++){
-        if( viewshed->viewshed[(x * viewshed->cols) + y] )
-            image_buffer[(x * viewshed->cols) + y] = black;
+        if( viewshed->viewshed[(x * viewshed->cols) + y] ){
+            image_buffer[(x * viewshed->cols) + y] = green;
+        }
     }
+
 
     /* Initialize the row pointers */
     if( (row_pointers = (png_bytep*) calloc(viewshed->rows, sizeof(png_bytep))) == NULL ){
@@ -493,11 +500,14 @@ viewshed_to_png(vs_viewshed_t *viewshed, FILE *outputfile, int x, int y, int cro
         goto exit;
     }
 
+    
     y-=(crop/2); // top of circle
     x-=(crop/2); // left of circle
+
     for(size_t i = 0; i<crop; i++){
-        row_pointers[i] = (png_bytep) &image_buffer[((i+y) * viewshed->rows)+x];
+        row_pointers[i] = (png_bytep) &image_buffer[((i+y) * viewshed->cols)+x];
     }
+
 
     /* Do PNG image processing */
     png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);

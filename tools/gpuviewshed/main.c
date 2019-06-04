@@ -12,7 +12,7 @@ int main(int argc, char** argv){
     vs_heightmap_t heightmap = {};
     float resolution = -1;
     float north,east,south,west;
-
+    int debug=1;
     // name x y z rad tiles PNG
     //    0 1 2 3 4 5 6
     // 2km radius viewshed @ 20m AGL 
@@ -85,7 +85,8 @@ int main(int argc, char** argv){
         exit(1);
     }
 
-    fprintf(stderr,"Latitude: %.6f\nLongitude: %.6f\nTx height: %dm\nRx height: %dm\nRadius: %.1fkm\n",lat,lon,TxH,RxH,radius);
+    if(debug)
+        fprintf(stderr,"Latitude: %.6f\nLongitude: %.6f\nTx height: %dm\nRx height: %dm\nRadius: %.1fkm\n",lat,lon,TxH,RxH,radius);
 
     viewshed_file = fopen(pngfile, "w");
 
@@ -97,7 +98,8 @@ int main(int argc, char** argv){
         goto exit;
     }
 
-    fprintf(stderr, "Heightmap Info:\n\trows: %u\n\tcols: %u\n\txll:  %.6f\n\tyll:  %.6f\n\tresolution:  %.0f\n", heightmap.rows, heightmap.cols, heightmap.xll, heightmap.yll, resolution);
+    if(debug)
+        fprintf(stderr, "Heightmap Info:\n\trows: %u\n\tcols: %u\n\txll:  %.6f\n\tyll:  %.6f\n\tresolution:  %.0f\n", heightmap.rows, heightmap.cols, heightmap.xll, heightmap.yll, resolution);
 
     uint32_t x;
     uint32_t y;
@@ -109,25 +111,25 @@ int main(int argc, char** argv){
 
     // Sanity check cropping is possible within available heightmap
     if(x+radpx>heightmap.cols){
-        fprintf(stderr,"Cropping is %d pixels beyond X limit (%d)!\n",(x+radpx)-heightmap.cols,heightmap.cols);
+        //fprintf(stderr,"Cropping is %d pixels beyond X limit (%d)!\n",(x+radpx)-heightmap.cols,heightmap.cols);
         radpx-=(x+radpx)-heightmap.cols;
     }
     if(y+radpx>heightmap.rows){
-        fprintf(stderr,"Cropping is %d pixels beyond Y limit (%d)!\n",(y+radpx)-heightmap.rows,heightmap.rows);
+        //fprintf(stderr,"Cropping is %d pixels beyond Y limit (%d)!\n",(y+radpx)-heightmap.rows,heightmap.rows);
         radpx-=(y+radpx)-heightmap.rows;
     }
     vs_viewshed_t viewshed = gpu_calculate_viewshed(heightmap, x, y, TxH, RxH, radpx);
 
     if( (status = viewshed_to_png(&viewshed, viewshed_file, x, y, radpx*2)) != 0 ){
-        fprintf(stderr, "Error outputting viewshed\n");
+        //fprintf(stderr, "Error outputting viewshed\n");
         goto exit;
     }
     int adj=3;
-    north=lat+((radpx+adj)/(ppd*1.0));
+    north=lat+((radpx-adj)/(ppd*1.0));
     east=lon+(radpx/(ppd*1.0));
     south=lat-((radpx-adj)/(ppd*1.0));
     west=lon-(radpx/(ppd*1.0));
-    fprintf(stdout,"{\"north\": %.6f, \"east\": %.6f, \"south\": %.6f, \"west\": %.6f}\n",radpx,ppd,north,east,south,west);
+    fprintf(stdout,"|%.6f|%.6f|%.6f|%.6f|\n",north,east,south,west);
 
 exit:
     heightmap_destroy(&heightmap);
